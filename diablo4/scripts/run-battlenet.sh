@@ -24,6 +24,7 @@ if [ ! -f "$BNET_DIR_HOST/Battle.net.exe" ]; then
 fi
 
 print -r -- "区域:   $DM_REGION_LABEL"
+print -r -- "芯片:   $DM_ARCH（图形后端 $DM_GRAPHICS_BACKEND）"
 print -r -- "引擎:   $($WINE --version 2>/dev/null | head -1)"
 print -r -- "前缀:   $WINEPREFIX"
 if [ "$DM_USE_DESKTOP" = "1" ]; then

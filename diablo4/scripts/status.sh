@@ -10,8 +10,26 @@ bad()  { printf '  \033[31m❌\033[0m %s\n' "$*" }
 note() { printf '  \033[33m·\033[0m %s\n' "$*" }
 sec()  { printf '\n\033[1m%s\033[0m\n' "$*" }
 
-printf 'Diablo IV 国服 on Apple Silicon —— 环境自检\n'
+printf 'Diablo IV 国服 on Mac —— 环境自检\n'
 printf '区域: %s\n' "$DM_REGION_LABEL"
+
+sec "〇、芯片架构"
+printf '  · 架构: %s   图形后端: %s\n' "$DM_ARCH" "$DM_GRAPHICS_BACKEND"
+if [ "$DM_APPLE_SILICON" = "1" ]; then
+  ok "Apple 芯片 —— 具备运行 D4 的前提（D3DMetal 可用）"
+  if /usr/bin/arch -arm64 /usr/bin/true 2>/dev/null && [ ! -x /usr/libexec/rosetta/oahd ]; then
+    note "未检测到 Rosetta 2（oahd）。若未安装请执行: softwareupdate --install-rosetta --agree-to-license"
+  elif [ ! -d /Library/Apple/usr/libexec/oah ]; then
+    note "未检测到 Rosetta 2。若未安装请执行: softwareupdate --install-rosetta --agree-to-license"
+  else
+    ok "Rosetta 2 已安装（运行 x86_64 Windows 程序必需）"
+  fi
+else
+  note "Intel（x86_64）—— 脚本可正常工作，但 D4 预期【无法运行】"
+  note "原因: D4 需要 DX12 FL 12_0，该能力来自 Apple D3DMetal，"
+  note "      而 Apple 官方 GPTK 的前置条件明确要求 Apple 芯片。"
+  note "本机 x86_64 是原生执行，不需要 Rosetta。详见 docs/FINDINGS.md 第八节。"
+fi
 
 sec "一、引擎（必须同时满足 Agent 授权与 DX12，缺一不可）"
 if [ -x "$WINE" ]; then
@@ -22,15 +40,19 @@ else
 fi
 
 # 条件 A：Agent 授权靠 CodeWeavers 血统（不是旧式/新式 WoW64 本身，而是它的进程路径解析）
-if [ -f "$ENGINE/lib/wine/x86_64-windows/d3d12.dll" ] && grep -qa "D3DMetalDLLsBase" "$ENGINE/lib/wine/x86_64-windows/d3d12.dll" 2>/dev/null; then
-  ok "D3DMetal PE 垫片已接入（条件 B：DX12）"
+if [ "$DM_APPLE_SILICON" = "1" ]; then
+  if [ -f "$ENGINE/lib/wine/x86_64-windows/d3d12.dll" ] && grep -qa "D3DMetalDLLsBase" "$ENGINE/lib/wine/x86_64-windows/d3d12.dll" 2>/dev/null; then
+    ok "D3DMetal PE 垫片已接入（条件 B：DX12）"
+  else
+    bad "缺 Apple 的 D3DMetal 垫片 —— DX12 只有 FL 11_0，D4 跑不起来"
+  fi
+  for f in d3d11 d3d12 dxgi; do
+    [ -L "$ENGINE/lib/wine/x86_64-unix/$f.so" ] || { bad "$f.so 不是 symlink（复制会破坏 @loader_path 解析）"; break; }
+  done
+  [ -f "$ENGINE/lib/external/libd3dshared.dylib" ] && ok "lib/external/libd3dshared.dylib 就位" || bad "缺 libd3dshared.dylib"
 else
-  bad "缺 Apple 的 D3DMetal 垫片 —— DX12 只有 FL 11_0，D4 跑不起来"
+  note "Intel：跳过 D3DMetal 检查（该载荷在 Intel 上不可用，属预期）"
 fi
-for f in d3d11 d3d12 dxgi; do
-  [ -L "$ENGINE/lib/wine/x86_64-unix/$f.so" ] || { bad "$f.so 不是 symlink（复制会破坏 @loader_path 解析）"; break; }
-done
-[ -f "$ENGINE/lib/external/libd3dshared.dylib" ] && ok "lib/external/libd3dshared.dylib 就位" || bad "缺 libd3dshared.dylib"
 
 # 致命陷阱：经 arch/nohup 启动会剥掉 DYLD_*，字体全无
 if [ -n "${DYLD_FALLBACK_LIBRARY_PATH:-}" ]; then

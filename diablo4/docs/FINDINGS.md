@@ -376,3 +376,68 @@ Soju 的 `play.sh` 设了 `WINEMSYNC=1`，但**本机引擎上会把程序直接
 本项目走过一次弯路：tar 解压静默失败（`2>/dev/null` 吞掉报错）导致可执行文件不存在，
 启动直接失败，日志里一条错误都没有——我据此得出了「成功」的错误结论。
 **没有输出 ≠ 成功；要先确认进程真的在跑。**
+
+---
+
+## 八、关于 Mac x86_64（Intel）
+
+### 8.1 结论：脚本可用，但 D4 跑不起来
+
+**D4 在 Intel Mac 上无法运行，原因是 Apple 的支持范围，不是脚本缺陷。**
+
+Apple 官方 Game Porting Toolkit 仓库的 `Prerequisites` 第一条原文：
+
+```
+- A Mac with Apple silicon.
+```
+
+而 D4 需要的 DX12 feature level 12_0 **只能来自 D3DMetal**（条件 B，见第三节），
+D3DMetal 由 GPTK 提供。因此在 Intel Mac 上条件 B 无法满足，
+D4 会在 DX12 初始化阶段失败。
+
+> 本节所引为 Apple 官方文档的既有要求。本项目**没有** Intel 实机，
+> 因此不对 Intel 上的实际表现做任何断言——只陈述该前置条件，并据此不声称支持。
+
+### 8.2 脚本在 Intel 上的行为
+
+`scripts/env.sh` 会检测 `uname -m` 并自动切换，无需手工改配置：
+
+| | Apple 芯片（arm64） | Intel（x86_64） |
+|---|---|---|
+| `DM_ARCH` | `arm64` | `x86_64` |
+| 图形后端 | `d3dmetal` | `wined3d` |
+| `CX_ACTIVE_GRAPHICS_BACKEND` 等 | 设置（指向 D3DMetal） | **不设置** |
+| `D3DM_SUPPORT_DXR` | 设置 | **不设置** |
+| `ROSETTA_ADVERTISE_AVX` | 设置（走 Rosetta 必需） | **不设置**（原生 x86_64，AVX 本来就可用） |
+| 引擎二进制 | 仍是同一个 x86_64 引擎（经 Rosetta） | 同一个引擎，**原生执行** |
+
+注意引擎**不需要换**：它是 x86_64 Mach-O，在 Apple 芯片上经 Rosetta 2 跑，
+在 Intel 上就是原生执行。
+
+`scripts/status.sh` 增加了「〇、芯片架构」一节：
+
+- Apple 芯片：检查 Rosetta 2 是否安装，并继续检查 D3DMetal 载荷
+- Intel：直接说明 D4 为何跑不起来，并**跳过** D3DMetal 载荷检查
+  （那里缺文件是预期行为，不应报成错误）
+
+`scripts/run-d4.sh` 在 Intel 上启动前会打印同样的结论，避免让人白等。
+
+### 8.3 Intel 上还有什么是有意义的
+
+引擎本身、以及**条件 A（Agent caller authorization）**都不依赖 Metal——
+它们只跟 Wine 的进程路径解析有关。所以：
+
+- 战网客户端的安装、登录、下载游戏：在 Intel 上有机会工作
+- 客户端界面显示：Intel Mac 有原生 OpenGL 驱动，`wined3d` 路径
+  （即 Apple 芯片上我们会避开的那个后端）在 Intel 上反而是默认选择，
+  有可能正常渲染
+- **D4 本身：不行**（缺 DX12 能力）
+
+如果你在 Intel 机器上试出了不同结果，欢迎反馈——但本仓库当前不声称支持。
+
+### 8.4 排查 Intel 问题时的注意点
+
+- **不要**因为看到 `d3d12check` 报 11_0 就怀疑装错了：Intel 上这是预期结果
+- **不要**给 Intel 机器装 D3DMetal 载荷：它不仅没用，还可能与引擎的
+  ABI 不匹配，引入新的加载失败（第二节 1.3 已记录 `__wine_unix_call` 未实现的失败模式）
+- Intel 上不需要 Rosetta，也不需要 `ROSETTA_ADVERTISE_AVX`

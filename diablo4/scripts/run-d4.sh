@@ -37,10 +37,21 @@ if ! ps ax -o command | grep -q 'Battle.net.exe'; then
 fi
 
 print -r -- "区域: $DM_REGION_LABEL"
-print -r -- "引擎: $($WINE --version 2>/dev/null | head -1)（D3DMetal，DX12）"
+print -r -- "引擎: $($WINE --version 2>/dev/null | head -1)"
+print -r -- "芯片: $DM_ARCH（图形后端 $DM_GRAPHICS_BACKEND）"
 print -r -- "启动: Diablo IV.exe -nostreamline -sso -launch -uid fenris"
 print -r -- "说明: 客户端保持运行；不要关掉它，否则 SSO 令牌失效。"
 print -r -- ""
+
+# Intel 上明确给出结论，避免白等
+if [ "$DM_APPLE_SILICON" != "1" ]; then
+  print -r -- "⚠️  当前是 Intel（x86_64）Mac：D4 预期【无法运行】。"
+  print -r -- "    原因：D4 需要 DX12 feature level 12_0，该能力来自 Apple 的 D3DMetal，"
+  print -r -- "    而 Apple 官方 GPTK 的前置条件明确要求 Apple 芯片。"
+  print -r -- "    脚本在 Intel 上仍会正常启动，但游戏会在 DX12 初始化阶段失败。"
+  print -r -- "    详见 docs/FINDINGS.md 第八节。"
+  print -r -- ""
+fi
 
 {
   print -r -- "===== $(date '+%F %T') ====="

@@ -1,4 +1,4 @@
-# 《暗黑破坏神 IV》国服 在 Apple Silicon Mac 上的共享环境配置
+# 《暗黑破坏神 IV》国服 在 Mac 上的共享环境配置（Apple 芯片 / Intel x86_64）
 # 由 install-battlenet.sh / run-battlenet.sh / run-d4.sh / status.sh 共同读取
 #
 # ============================ 引擎为什么是它 ============================
@@ -14,7 +14,11 @@
 #
 # 唯一同时满足的是：Soju 的 CX 引擎（由 CodeWeavers 26.3 公开发布的 GPL 源码构建）
 #                   + 接入 Apple GPTK 的 D3DMetal 载荷
-# 实测：Agent 授权 0 失败；D3D12CreateDevice(12_0) 成功，最高特性级别 12_1
+# 实测（Apple 芯片）：Agent 授权 0 失败；D3D12CreateDevice(12_0) 成功，最高特性级别 12_1
+#
+# ⚠️ Intel x86_64 的差别：Apple 官方 GPTK 要求 Apple 芯片，D3DMetal 因此不可用，
+#    条件 B 无法满足 → D4 跑不起来。脚本在 Intel 上仍可正常工作并给出明确结论，
+#    但本脚本不声称支持在 Intel 上运行 D4。见 docs/FINDINGS.md 第八节。
 #
 # ⚠️ 必须【直接】执行 $WINE，不要经 `arch -x86_64` 或 `nohup`：
 #    它们是 Apple 签名的受限二进制，会把 DYLD_* 变量剥掉，导致
@@ -23,6 +27,21 @@
 
 # ---- 区域 ----
 export DM_REGION="${DM_REGION:-cn}"
+
+# ---- 芯片架构检测（Apple 芯片 / Intel x86_64）----
+# 两个架构的差别**不在脚本**，而在 Apple 的支持范围：
+#   · Apple 官方 GPTK 的前置条件第一条是「A Mac with Apple silicon」，
+#     而 D3DMetal（D4 所需的 DX12 唯一来源）来自 GPTK。
+#   · 因此 Mac x86_64（Intel）上 **D4 本身跑不起来**——引擎可以跑、Agent 授权可以过，
+#     但拿不到 DX12 feature level 12_0，D4 会在启动/渲染阶段失败。
+# 本脚本在 Intel 上依然可以正确工作（不误判 Rosetta、给出明确结论、
+# 跑的仍是同一个 x86_64 引擎，因为该引擎本身就是 x86_64 的），
+# 但 **不声称支持在这类机器上运行 D4**。详见 docs/FINDINGS.md 第八节。
+case "$(uname -m)" in
+  arm64)  export DM_ARCH="arm64";  export DM_APPLE_SILICON=1 ;;
+  x86_64) export DM_ARCH="x86_64"; export DM_APPLE_SILICON=0 ;;
+  *)      export DM_ARCH="$(uname -m)"; export DM_APPLE_SILICON=0 ;;
+esac
 
 # ---- 引擎 ----
 ENGINE="${SOJU_ENGINE:-$HOME/Games/d4/engine/cx-engine}"
@@ -67,8 +86,11 @@ case "$DM_REGION" in
 esac
 export WINEARCH=win64
 
-# ---- 关键开关（缺一个 D4 都起不来）----
-export ROSETTA_ADVERTISE_AVX=1     # D4 加载器要求 AVX；Rosetta 2 支持，但只有这个未公开变量才会对外声明
+# ---- 关键开关 ----
+# ROSETTA_ADVERTISE_AVX：D4 加载器要求 AVX。Rosetta 2 支持 AVX，
+#   但只有这个未公开变量才会对外声明。仅在 Apple 芯片（走 Rosetta）上需要；
+#   Intel Mac 是原生 x86_64，AVX 本来就可用，设了也无害。
+[ "$DM_APPLE_SILICON" = "1" ] && export ROSETTA_ADVERTISE_AVX=1
 
 # ⚠️ 这一个不设，Battle.net 的登录界面就是黑屏 + 转圈，根本登不进去：
 #   CEF 渲染进程调用 VirtualProtect 后会断言「旧保护 == PAGE_READWRITE」，
@@ -77,13 +99,27 @@ export ROSETTA_ADVERTISE_AVX=1     # D4 加载器要求 AVX；Rosetta 2 支持�
 #   CrossOver 出货版默认开这个 hack，GPL 源码里只能靠这个环境变量打开。
 export WINE_SIMULATE_WRITECOPY=1
 
-export D3DM_SUPPORT_DXR=1          # 让 D3DMetal 暴露 DXR 能力，D4 用得到
+# D3DM_SUPPORT_DXR：让 D3DMetal 暴露 DXR（光线追踪）能力，D4 用得到。仅 Apple 芯片有意义。
+[ "$DM_APPLE_SILICON" = "1" ] && export D3DM_SUPPORT_DXR=1
 
-# ---- 图形后端必须显式指定 D3DMetal ----
-# 不设这几个，CX 引擎不一定会走 D3DMetal 路径（可能退回 wined3d/vkd3d，那只到 DX12 FL 11_0）
-export CX_ACTIVE_GRAPHICS_BACKEND=d3dmetal
-export CX_GRAPHICS_BACKEND=d3dmetal
-export CX_APPLEGPTK_LIBD3DSHARED_PATH="$ENGINE/lib/external/libd3dshared.dylib"
+# ---- 图形后端：按芯片架构自动选择 ----
+# Apple 芯片：显式指定 D3DMetal（唯一能给到 DX12 FL 12_0 的路，D4 必需）。
+#            不设这几个变量的话，CX 引擎不一定走 D3DMetal，可能退回
+#            wined3d/vkd3d，那只到 DX12 FL 11_0。
+# Intel x86_64：D3DMetal 不可用（Apple 官方 GPTK 要求 Apple 芯片），
+#            因此这里不设 CX_* —— 引擎保持「无 GPTK 载荷」状态，
+#            d3d11 由 Wine 自带 wined3d 提供。此时 Battle.net 客户端界面
+#            可能仍能渲染（Intel Mac 有原生 OpenGL 驱动），但 **D4 无法运行**
+#            （拿不到 DX12 FL 12_0）。详见 docs/FINDINGS.md 第八节。
+if [ "$DM_APPLE_SILICON" = "1" ]; then
+  export DM_GRAPHICS_BACKEND="d3dmetal"
+  export CX_ACTIVE_GRAPHICS_BACKEND=d3dmetal
+  export CX_GRAPHICS_BACKEND=d3dmetal
+  export CX_APPLEGPTK_LIBD3DSHARED_PATH="$ENGINE/lib/external/libd3dshared.dylib"
+else
+  export DM_GRAPHICS_BACKEND="wined3d"
+  unset CX_ACTIVE_GRAPHICS_BACKEND CX_GRAPHICS_BACKEND CX_APPLEGPTK_LIBD3DSHARED_PATH
+fi
 
 # ⚠️ 故意不设 WINEMSYNC=1。
 #   Soju 的 play.sh 设了它，但实测在本机引擎上会把程序直接搞死（rc=1、零输出）：
