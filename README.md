@@ -1,7 +1,7 @@
-# 在 Apple Silicon Mac 上跑《暗黑破坏神》——国服 D4 + 经典 D2 
+# 在 Apple Silicon Mac 上跑国服《暗黑破坏神 IV》
 
 用**纯免费/开源方案**，在 Apple 芯片 Mac（实测 M5 Pro / macOS 26.6.2）上跑起
-**国服《暗黑破坏神 IV》** 与 **经典版《暗黑破坏神 II》**。
+**国服《暗黑破坏神 IV》**。
 
 > **本仓库不含任何游戏内容。** 你需要拥有游戏的合法授权，游戏文件只能由你自己提供。
 > 详见[法律与授权](#法律与授权)。
@@ -13,7 +13,6 @@
 | 目标 | 状态 |
 |---|---|
 | 国服《暗黑破坏神 IV》 | ✅ 可正常游玩（联网登录、图形与音频正常） |
-| 经典版《暗黑破坏神 II》环境 | ✅ 已搭好并通过底层兼容性实测（等待你自己的合法安装器） |
 
 **全程未使用任何付费产品或试用。** 引擎由 CodeWeavers 公开发布的 **GPL 源码**构建（或使用其社区预编译版），
 Apple 的部分使用你自己从 Apple 下载的免费 Game Porting Toolkit。
@@ -170,52 +169,38 @@ DM_DESKTOP_SIZE=1920x1080 diablo4/scripts/run-battlenet.sh
 
 ---
 
-## 三、经典版 D2（附）
-
-同一套思路也用于经典版《暗黑破坏神 II》。经典版的优势是**不需要战网启动器**，单机、局域网全功能。
-本仓库提供：双击启动器、环境自检、Glide 3D 包装器安装、以及一个 32 位 DirectDraw/D3D/OpenGL 实测程序。
-
-详见 **[diablo2-classic/README.md](diablo2-classic/README.md)**。
-
----
-
-## 四、目录结构
+## 三、目录结构
 
 ```
 .
 ├── README.md                      ← 你在这里
-├── diablo4/                       ← 国服 D4（主项目）
-│   ├── README.md                  ← 操作手册
-│   ├── docs/FINDINGS.md           ← 四个条件的原理与实测数据（技术核心）
-│   ├── scripts/
-│   │   ├── env.sh                 ← 唯一配置入口
-│   │   ├── run-battlenet.sh       ← 启动客户端
-│   │   ├── run-d4.sh              ← 启动游戏
-│   │   ├── install-battlenet.sh   ← 跑官方安装器
-│   │   ├── status.sh              ← 逐条体检四个条件
-│   │   ├── disable-overlay.sh     ← 应急用（默认拒绝执行，见文件头警告）
-│   │   └── setup-prefix.sh.obsolete
-│   └── tools/                     ← 四个自编诊断程序（C 源码）
-│       ├── sigcheck.c             ← WinVerifyTrust 签名验证能力
-│       ├── vercheck.c             ← 权威系统版本（32/64 位）
-│       ├── d3d12check.c           ← DX12 / DXGI 能力
-│       └── loadercheck.c          ← D4 加载器依赖
-└── diablo2-classic/               ← 经典版 D2
-    ├── README.md
-    ├── docs/verification-2026-10-15.txt   ← 实测原始输出
+├── LICENSE
+└── diablo4/                       ← 主项目
+    ├── README.md                  ← 操作手册
+    ├── docs/FINDINGS.md           ← 四个条件的原理与实测数据（技术核心）
     ├── scripts/
-    └── tools/d2check.c
+    │   ├── env.sh                 ← 唯一配置入口
+    │   ├── run-battlenet.sh       ← 启动客户端
+    │   ├── run-d4.sh              ← 启动游戏
+    │   ├── install-battlenet.sh   ← 跑官方安装器
+    │   ├── status.sh              ← 逐条体检四个条件
+    │   ├── disable-overlay.sh     ← 应急用（默认拒绝执行，见文件头警告）
+    │   └── setup-prefix.sh.obsolete
+    └── tools/                     ← 四个自编诊断程序（C 源码）
+        ├── sigcheck.c             ← WinVerifyTrust 签名验证能力
+        ├── vercheck.c             ← 权威系统版本（32/64 位）
+        ├── d3d12check.c           ← DX12 / DXGI 能力
+        └── loadercheck.c          ← D4 加载器依赖
 ```
 
 ---
 
-## 五、本仓库刻意不含的东西
+## 四、本仓库刻意不含的东西
 
 | 不含 | 原因 |
 |---|---|
 | 任何游戏文件（程序、美术、音频、数据表） | 版权；请使用你自己的合法拷贝 |
 | 编译好的 `.exe` | 源码在 `tools/`，自行编译（见下） |
-| Sven's Glide Wrapper | 第三方免费软件，[官网](https://www.svenswrapper.de/)自行下载 |
 | 引擎二进制、Wine 前缀、日志 | 体积大，且属游戏文件的派生物 |
 
 ### 编译诊断工具
@@ -226,7 +211,6 @@ brew install mingw-w64
 # 32 位
 i686-w64-mingw32-gcc -O1 -o sigcheck32.exe sigcheck.c -lwintrust
 i686-w64-mingw32-gcc -O1 -o vercheck32.exe vercheck.c
-i686-w64-mingw32-gcc -O1 -o d2check32.exe  d2check.c -lddraw -ldxguid -lopengl32 -lgdi32 -luser32
 
 # 64 位
 x86_64-w64-mingw32-gcc -O1 -o d3d12check64.exe d3d12check.c -ld3d12 -ldxgi -ldxguid -luuid
@@ -246,7 +230,7 @@ ROSETTA_ADVERTISE_AVX=1 WINE_SIMULATE_WRITECOPY=1 \
 
 ---
 
-## 六、踩过的坑（按代价排序）
+## 五、踩过的坑（按代价排序）
 
 1. **用「GL 错误条数」当成功判据** —— 无效。默认路径 0 条错误却全黑；能渲染的配置反而有 9~12 条。
    真正的判据是**画面**，以及进程是否真的在跑（`ps` 确认 + 客户端是否产生新日志）。
@@ -284,4 +268,4 @@ ROSETTA_ADVERTISE_AVX=1 WINE_SIMULATE_WRITECOPY=1 \
 ## 许可
 
 本仓库的脚本与文档：MIT（见 [LICENSE](LICENSE)）。
-第三方组件（引擎、GPTK、Glide Wrapper 等）各自遵循其原始许可。
+第三方组件（引擎、Apple GPTK、MoltenVK 等）各自遵循其原始许可。

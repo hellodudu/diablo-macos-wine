@@ -12,11 +12,6 @@ prefix*/
 engine/
 *.tar.xz
 
-# 第三方免费软件（README 里给下载地址，不转载）
-staging/
-glide3x.dll
-glide-init.exe
-
 # macOS
 .DS_Store
 ._*
