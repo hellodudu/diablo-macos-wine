@@ -1,0 +1,67 @@
+经典版 Diablo II 兼容性实测记录
+================================
+机器: MacBook Pro, Apple M5 Pro, macOS 26.6.2 (Build 25G83), arm64
+引擎: wine-7.7 (Game Porting Toolkit)  /Applications/Game Porting Toolkit.app/Contents/Resources/wine/bin/wine64
+前缀: ~/Games/diablo2/prefix
+程序: tools/d2check32.exe  (PE32 executable, Intel 80386 —— 真正的 32 位程序)
+源码: tools/d2check.c
+编译: i686-w64-mingw32-gcc -O1 -o d2check32.exe d2check.c -lddraw -ldxguid -lopengl32 -lgdi32 -luser32
+时间: 2026-10-15 17:12
+
+------ 实跑输出 ------
+
+==============================================
+ 经典版 Diablo II 兼容性自检 (Wine / Apple Silicon)
+==============================================
+
+-- 进程与系统 --
+[ OK ]  指针宽度 4 字节 -> 32 位进程
+[ .. ]  报告的系统版本: 6.2 build 9200
+
+-- DirectDraw（D2 默认的 2D 渲染路径）--
+[ OK ]  DirectDrawCreateEx —— DirectDraw 7 对象创建成功
+[ OK ]  GetDisplayMode —— 当前 1920x1080 32 bpp
+[ OK ]  SetCooperativeLevel(DDSCL_NORMAL 窗口模式)
+[ OK ]  创建主表面 (Primary Surface) —— 2D 输出通道可用
+[ OK ]  创建离屏表面 640x480 —— blit 缓冲可用
+[ OK ]  创建并绑定 Clipper —— 窗口模式裁剪可用
+[ OK ]  Lock 主表面 —— 可直接写帧缓冲
+[ OK ]  GetDC 主表面 —— GDI 绘制通道可用（D2 的 UI 文字走这条路）
+[ OK ]  d3d8.dll 可加载
+[ OK ]  d3d9.dll 可加载，Direct3DCreate9 成功
+
+-- OpenGL（Sven's Glide Wrapper 走的是这条路）--
+[ OK ]  ChoosePixelFormat —— 像素格式可选
+[ OK ]  SetPixelFormat
+[ OK ]  wglCreateContext —— OpenGL 上下文创建成功
+[ OK ]  wglMakeCurrent
+[ .. ]  GL_VERSION  = 2.1 Metal - 90.5
+[ .. ]  GL_RENDERER = Apple M5 Pro
+[ .. ]  GL_VENDOR   = Apple
+[ OK ]  可查询 OpenGL 版本字符串 —— 3D 模式具备基础条件
+[ OK ]  glClear + glFinish —— 实际渲染调用未报错
+
+==============================================
+ 结论：全部通过，环境具备运行经典 D2 的条件
+==============================================
+
+退出码: 0
+
+------ 32 位辅助验证（无需游戏文件）------
+
+$ file prefix/drive_c/windows/syswow64/cmd.exe
+  PE32 executable (console) Intel 80386 ...          # 确为 32 位 PE
+
+$ wine64 'C:\windows\syswow64\cmd.exe' /c "echo %PROCESSOR_ARCHITECTURE% %PROCESSOR_ARCHITEW6432%"
+  ARCH=x86  W6432=AMD64                              # WoW64 生效：32 位进程跑在 64 位引擎上
+
+$ 32 位图形/输入库检查（syswow64）
+  ddraw OK   d3d8 OK   d3d9 OK   dinput OK   dinput8 OK
+  dsound OK  glu32 OK  opengl32 OK  user32 OK  gdi32 OK
+
+------ 未覆盖的路径（需真实游戏文件才能测）------
+
+  * Blizzard 安装器本身的行为
+  * 游戏启动、存档、音频、输入
+  * 全屏模式下的 SetDisplayMode 显示模式切换（本测试只测了 DDSCL_NORMAL 窗口模式）
+    —— 这是唯一有真实风险的路径，故默认配置为 -w 窗口模式，并提供虚拟桌面选项

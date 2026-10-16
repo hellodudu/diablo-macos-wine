@@ -1,0 +1,217 @@
+# 实测记录（2026-10-15 / 16）
+
+机器：MacBook Pro，Apple M5 Pro，macOS 26.6.2 (Build 25G83)，arm64
+工具：本仓库 `tools/` 下自编的程序（源代码同目录，编译方法见根 README）
+
+以下均为**实际运行输出**的摘录，不是推测。
+
+---
+
+## 1. 系统版本（条件 A 的排查）
+
+`vercheck64.exe` —— 用于否定「Windows 版本不够」这个猜测。
+
+```
+指针宽度: 8 字节 (64 位进程)
+GetVersionEx:        6.2 build 9200
+RtlGetVersion:       10.0 build 19045  <- 内核真正用的值
+PROCESSOR_ARCH:      AMD64
+
+结论: 满足 Battle.net 要求（Win10+，Battle.net 要求 10.0+）
+```
+
+**要点**：注册表 `HKLM\Software\Microsoft\Windows NT\CurrentVersion\CurrentVersion`
+一直是 `6.3`，但**应用不读它**。`GetVersionEx` 的 `6.2` 是 Wine 对无 manifest 程序的既定行为，也不是问题。
+
+---
+
+## 2. 签名验证能力（条件 A 的排查）
+
+`sigcheck32.exe 'Z:\...\Battle.net-Setup-enUS.exe'` —— 用于否定「签名验证能力不足」。
+
+```
+指针宽度: 4 字节 (32 位)
+待检文件: Z:\...\Battle.net-Setup-enUS.exe
+wintrust.dll: 可加载
+
+WinVerifyTrust -> 0x00000000
+   ERROR_SUCCESS —— 签名有效且受信任
+
+判定: Wine 能验证该签名的真实性 —— Agent 的签名校验有可能通过
+```
+
+**要点**：`WinVerifyTrust` 在**传正确路径时是成功的**。真正的问题在于 Agent 拿到的路径打不开文件
+（见下一条的 `ERROR_FILE_NOT_FOUND`）。
+
+### Agent 侧的错误（来自 `WINEDEBUG=+wintrust` 的 274 MB 调试日志）
+
+```
+WinVerifyTrust returning 00000002   ← 58 次
+WinVerifyTrust returning 00000000   ← 12 次
+```
+
+`0x00000002` = `ERROR_FILE_NOT_FOUND`。结合 Agent 自身日志：
+
+```
+[I] Unable to validate connecting process (32)
+[E] Failed Caller authorization due to signature for 'Battle.net.exe'(PID)
+    -> Agent init returned status code=401
+```
+
+### 历史旁证：四个旧前缀的成功授权次数为 0
+
+| 前缀 | `Failed Caller authorization` 累计 |
+|---|---|
+| `battle-net` / `prefix` / `prefix-wine11` / `prefix-scotch` | 数百次（含 `Battle.net.exe` 本身 2557+ 次） |
+| 成功授权 | **0** |
+
+---
+
+## 3. DX12 能力（条件 B）
+
+`d3d12check64.exe`，同一个程序、同一台机器，只换引擎。
+
+### 3.1 Gcenx Wine Staging 11.9（MoltenVK + vkd3d）
+
+```
+进程位宽: 8 字节 (64 位)
+[ OK ]  CreateDXGIFactory1 —— DXGI 可用
+[ OK ]  适配器[0]: NVIDIA GeForce 6800  (显存 38338 MB, 软件=否)
+[ .. ]  尝试 D3D12CreateDevice(FL_12_0) …
+[FAIL]  D3D12CreateDevice(12_0)  (hr=0x80070057)
+[ .. ]  退一步试 11_0 …
+[ OK ]  D3D12CreateDevice(11_0) 成功（仅 11_0 特性级别）
+[ .. ]  最高支持特性级别: 更低
+结论：DX12 不可用（1 项失败）
+```
+
+> `NVIDIA GeForce 6800` 是 Wine 对未能识别的 `GL_VENDOR "Apple"` 给的占位名，不是真实硬件。
+
+### 3.2 CX 26.3 GPL 引擎 + Apple D3DMetal 载荷
+
+```
+进程位宽: 8 字节 (64 位)
+[ OK ]  CreateDXGIFactory1 —— DXGI 可用
+[ OK ]  适配器[0]: AMD Compatibility Mode  (显存 38338 MB, 软件=否)
+[ .. ]  尝试 D3D12CreateDevice(FL_12_0) …
+[ OK ]  D3D12CreateDevice(12_0) 成功 —— DX12 可用，D4 具备渲染前提
+[ OK ]  最高支持特性级别: 12_1
+```
+
+### 3.3 否定结论：D3DMetal 不能拷进普通 Wine
+
+把 Apple 载荷三部分拷进 Gcenx Wine 11.9 后：
+
+```
+wine: Call from 00006FFFFE4F67E8 to unimplemented function ntdll.dll.__wine_unix_call, aborting
+err:module:loader_init "d3d12.dll" failed to initialize, aborting
+err:module:loader_init Initializing dlls for L"Z:\...\d3d12check64.exe" failed, status 80000100
+```
+
+---
+
+## 4. D4 加载器依赖（条件 D）
+
+`loadercheck64.exe`
+
+```
+=== D4 加载器依赖项检测 ===
+进程位宽: 8 字节 (64 位)
+-- kernel32 关键导出 --
+[ OK ]  kernel32.dll 已加载
+[ OK ]  kernel32.FindFirstFileNameW 存在
+[ OK ]  kernel32.FindNextFileNameW 存在
+[ .. ]  kernel32.FindFirstFileNameTransactedW 不存在（D4 不依赖，仅记录）
+[ .. ]  kernel32.FindNextFileNameTransactedW 不存在（D4 不依赖，仅记录）
+[ OK ]  kernel32.VirtualProtect 存在
+[ OK ]  kernel32.CreateFileMappingW 存在
+[ OK ]  ntdll.NtQuerySystemInformation 存在
+-- 关键函数实际调用 --
+[ OK ]  FindNextFileNameW 运行时可解析
+[ OK ]  用无效句柄调用返回 FALSE（err=120）—— 行为正确，非崩溃
+=== 结论 ===
+通过 —— D4 加载器在这台机器的引擎上具备启动前提
+```
+
+退出码 0。`err=120` = `ERROR_CALL_NOT_IMPLEMENTED`，即它是 stub，与上游修法一致。
+
+---
+
+## 5. 条件 C：界面渲染的演进过程（每一步都由用户截图确认）
+
+| 配置 | 画面 |
+|---|---|
+| 走 `Battle.net Launcher.exe`，无虚拟桌面 | 全黑 |
+| + `WINE_CUSTOM_FRAME` | 全黑，但 macOS 原生标题栏消失 |
+| + Wine 虚拟桌面 | **白屏** |
+| + `--in-process-gpu --use-gl=swiftshader` | ✅ 界面完整渲染（游戏列表 / 商城 / 好友列表 / 安装按钮） |
+
+同一批配置下的 GL 错误条数（说明该指标**不可作为判据**）：
+
+| 配置 | `Failed to create GLES3 context` | 画面 |
+|---|---|---|
+| 走 Launcher | 0 | 全黑 |
+| 虚拟桌面 + CEF 参数 | 9~12 | ✅ 正常 |
+
+修复 C-1（渲染进程 int3）前后的对照：
+
+| | `0x80000003` 异常 | 渲染器被终止 | 登录页 |
+|---|---|---|---|
+| 未设 `WINE_SIMULATE_WRITECOPY` | 1 次 | — | 黑屏 |
+| 设了 | **0** | **0** | `finished loading. statusCode=200` |
+
+---
+
+## 6. 环境变量 `WINEMSYNC` 的对照实验
+
+| 配置 | 结果 |
+|---|---|
+| 基线（不设） | ✅ rc=0，D3D12 FL 12_1 |
+| 加 `CX_ACTIVE_GRAPHICS_BACKEND` / `CX_GRAPHICS_BACKEND` | ✅ rc=0，D3D12 FL 12_1 |
+| **加 `WINEMSYNC=1`** | ❌ **rc=1，无任何输出** |
+| 全加（含 `WINEMSYNC`） | ❌ rc=1 |
+
+结论：本机引擎上**不要**设 `WINEMSYNC`。
+
+---
+
+## 7. 客户端侧的确认
+
+```
+[ProductState] InstallState (fenris): playable=1 regionalVersions=(cn: {playable:true, ...})
+[BNLogin] Logged into Battle.net successfully.
+[UnifiedAuth] UAuth: finished loading. statusCode=200 state=Login
+[BrowserClientHandler] End recording load sequence for browser content_browser (Webview); result=200
+```
+
+- `fenris` = 《暗黑破坏神 IV》的内部产品代号，`region=cn`
+- 登录过程中出现 `state=Challenge`（网易的验证码环节），由用户本人完成
+
+### Overlay 的两份副本（条件 D-2）
+
+```
+[GameLaunchController] Using agent overlay binary: C:/ProgramData/Battle.net/bdk\battlenet.overlay.runtime.exe
+[GameLaunchController] PostLaunchChildProcess status: launchAction=Overlay uid=fenris
+```
+
+客户端实际使用的是 **ProgramData** 那份，而不是安装目录下那份。
+
+### 游戏启动
+
+```
+Diablo IV.exe -nostreamline -sso -launch -uid fenris
+```
+
+实测：进程稳定运行（CPU 200%~455%，首次启动的着色器编译与资源加载阶段），
+图形与音频正常，用户确认**可正常游玩**。
+底部显示版本 `3.2.3.73883`、服务器 `cn.actual.battlenet.com.cn`。
+
+### 网络可达性（国服）
+
+```
+cn.actual.battlenet.com.cn  →  解析到阿里云 NLB（118.31.18.157 / 116.62.121.9）
+  TCP 1119  ✅ 可连接      ← 客户端实际使用的游戏/认证端口
+  TCP 443    ❌ 关闭        （该域名只服务游戏协议，HTTPS 探测失败属正常）
+account.battlenet.com.cn    ✅ 200
+cn.version.battlenet.com.cn ✅
+```

@@ -1,0 +1,50 @@
+#!/bin/zsh
+# 为《暗黑破坏神 IV》准备 Wine 前缀
+# 基于你原来的 ~/Games/battle-net 前缀，修正两个已知问题：
+#   1. Windows 版本是 8.1(6.3)，而 Battle.net 要求 Win10+  -> 设为 win10
+#   2. ProgramData/Battle.net 里残留了上次失败的 Agent（20MB）-> 备份后清除
+set -u
+
+GT="/Applications/Game Porting Toolkit.app"
+export PATH="$GT/Contents/Resources/wine/bin:$PATH"
+export WINE="$GT/Contents/Resources/wine/bin/wine64"
+export WINESERVER="$GT/Contents/Resources/wine/bin/wineserver"
+export WINEPREFIX="${WINEPREFIX:-$HOME/Games/battle-net}"
+export WINEARCH=win64
+# 必须是英文区域：国服 CN 包在 Wine 下 Agent 会 401（签名校验失败）
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export ROSETTA_ADVERTISE_AVX=1
+export D3DM_SUPPORT_DXR=1
+export WINEDEBUG="${WINEDEBUG:--all}"
+
+step() { print -r -- "\n==> $*"; }
+
+[ -d "$WINEPREFIX" ] || { print -r -- "前缀不存在: $WINEPREFIX"; exit 1; }
+
+step "结束所有 Wine / Battle.net 进程"
+pkill -f 'Battle.net' 2>/dev/null || true
+pkill -f 'Agent.exe'  2>/dev/null || true
+arch -x86_64 "$WINESERVER" -k 2>/dev/null || true
+sleep 2
+print -r -- "    ok"
+
+step "备份并清除上次失败的 Agent 残留"
+LEFT="$WINEPREFIX/drive_c/ProgramData/Battle.net"
+if [ -d "$LEFT" ]; then
+  BAK="$LEFT.bak-$(date +%Y%m%d-%H%M%S)"
+  mv "$LEFT" "$BAK"
+  print -r -- "    已移至: $BAK"
+else
+  print -r -- "    无残留，跳过"
+fi
+
+step "把前缀的 Windows 版本设为 win10（Battle.net 的最低要求）"
+arch -x86_64 winetricks -q win10 2>&1 | tail -5
+print -r -- "    当前注册表版本: $(grep -m1 '"CurrentVersion"="' "$WINEPREFIX/system.reg" | sed 's/.*"CurrentVersion"="\(.*\)".*/\1/')"
+
+step "安装 Battle.net 需要的运行库（corefonts + vcrun2019，需联网，5-15 分钟）"
+arch -x86_64 winetricks -q corefonts vcrun2019 2>&1 | tail -25
+
+step "准备完成"
+print -r -- "下一步: ~/Games/d4/install-battlenet.sh"

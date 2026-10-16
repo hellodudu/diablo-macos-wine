@@ -1,0 +1,27 @@
+# 编译产物（源码在 tools/，自行编译）
+*.exe
+*.dll
+*.o
+*.a
+
+# 运行时产物：日志、Wine 前缀、引擎二进制——都属派生物或体积过大，不入库
+logs/
+*.log
+prefix*/
+*-prefix/
+engine/
+*.tar.xz
+
+# 第三方免费软件（README 里给下载地址，不转载）
+staging/
+glide3x.dll
+glide-init.exe
+
+# macOS
+.DS_Store
+._*
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
